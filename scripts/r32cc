@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# r32cc: compile, assemble and link MiniC / assembly sources into an R32 executable.
+#   usage: scripts/r32cc [-O0|-O1] [-m map.txt] -o out.exe file.c [more.c|.s|.o ...]
+set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+OPT=-O1; OUT=a.exe; MAP=(); FILES=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -O0|-O1) OPT="$1" ;;
+    -o) OUT="$2"; shift ;;
+    -m) MAP=(-m "$2"); shift ;;
+    *) FILES+=("$1") ;;
+  esac
+  shift
+done
+[ ${#FILES[@]} -gt 0 ] || { echo "usage: r32cc [-O0|-O1] [-m map.txt] -o out.exe file.c [...]" >&2; exit 2; }
+TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+OBJS=("$ROOT/build/crt0.o")
+i=0
+for f in "${FILES[@]}"; do
+  i=$((i+1))
+  case "$f" in
+    *.c) "$ROOT/bin/mcc" "$OPT" "$f" -o "$TMP/$i.s"; "$ROOT/bin/r32as" "$TMP/$i.s" -o "$TMP/$i.o"; OBJS+=("$TMP/$i.o") ;;
+    *.s) "$ROOT/bin/r32as" "$f" -o "$TMP/$i.o"; OBJS+=("$TMP/$i.o") ;;
+    *.o) OBJS+=("$f") ;;
+    *) echo "r32cc: unknown file type: $f" >&2; exit 2 ;;
+  esac
+done
+OBJS+=("$ROOT/build/rt.o")
+"$ROOT/bin/r32ld" ${MAP[@]+"${MAP[@]}"} -o "$OUT" "${OBJS[@]}"
